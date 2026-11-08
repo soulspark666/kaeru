@@ -283,12 +283,38 @@ def main() -> None:
         if not signed:
             print('No partitions required re-signing (no cert2 present?)')
 
-    if lk_part_name := (config.get('LK_PART_HDR_NAME') or '').strip().strip('"'):
+    # Kconfig defaults LK_PART_HDR_NAME to an empty string, so an unset value
+    # still reads back as '""' and looks truthy. Applying it would clobber the
+    # first byte of the name field and leave the preloader with an unnamed LK
+    # image, which it then refuses to authenticate.
+    lk_part_name = config.get('LK_PART_HDR_NAME') or ''
+    lk_part_name = lk_part_name.strip().strip('"')
+    if lk_part_name:
         print("Changing image name to %s" % lk_part_name)
         part.header.name = lk_part_name
 
+    # The preloader looks the image up by its header name, so an empty name is
+    # an unrecoverable boot failure rather than a cosmetic problem.
+    if part.header.name != 'lk':
+        exit(
+            "ERROR: LK header name is %r, expected 'lk'. "
+            'Check CONFIG_LK_PART_HDR_NAME.' % part.header.name
+        )
+
     lk._rebuild_contents()
     lk.save(args.output if args.output else ('%s-patched.bin' % device))
+
+    # Verify what actually landed on disk, since the header is what decides
+    # whether the preloader will load LK at all.
+    written = open(args.output if args.output else ('%s-patched.bin' % device), 'rb').read(16)
+    if written[0:8] != b'\x88\x16\x88\x58' + struct.pack('<I', part.header.data_size):
+        exit('ERROR: Patched image header is malformed!')
+    if written[8:10] != b'lk':
+        exit(
+            'ERROR: Patched image header name is %r, expected b\'lk\'.'
+            % written[8:10]
+        )
+    print('Header check passed: name=lk, size=%d' % part.header.data_size)
 
 
 if __name__ == '__main__':

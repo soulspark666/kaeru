@@ -9,3 +9,9 @@ config REALME_EVEN
     default n
     help
       Say Y if you want to include support for realme C25/s/Narzo 50A
+
+config REALME_CUPIDA
+    bool "Support Realme X7 Max 5G"
+    default n
+    help
+      Say Y if you want to include support for Realme X7 Max 5G
